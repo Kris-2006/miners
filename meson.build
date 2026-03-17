@@ -35,3 +35,8 @@ test_proto = executable('test_proto',files('tests/test_protocol.c','src/protocol
   )
 test('protocol',test_proto)
 
+test_hm = executable('test_hm',
+  files('tests/test_hashmap.c','src/hashmap.c'),
+  include_directories : inc,
+  )
+test('hashmap',test_hm)
