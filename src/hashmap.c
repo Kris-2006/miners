@@ -209,3 +209,9 @@ void hm_remove(hm_t *map, void *key) {
 
   return;
 }
+int cmp_int(const void *a, const void *b) {
+  return *(const int *)a - *(const int *)b;
+}
+int cmp_str(const void *a, const void *b) {
+  return strcmp((const char *)a, (const char *)b);
+}

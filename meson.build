@@ -19,7 +19,7 @@ thread_dep = dependency('threads')   # portable pthreads
 # --- Include directory ---
 inc = include_directories('include')
 # --- Executables ---
-server_src = files('src/server/main.c')
+server_src = files('src/server/main.c','src/hashmap.c','src/server.c','src/protocol.c')
 executable('server', server_src,
   include_directories : inc,
   dependencies : [thread_dep],
@@ -40,3 +40,9 @@ test_hm = executable('test_hm',
   include_directories : inc,
   )
 test('hashmap',test_hm)
+
+test_server = executable('test_server',
+  files('tests/test_server.c','src/server.c','src/hashmap.c','src/protocol.c'),
+  include_directories : inc,
+  )
+test('server',test_server)

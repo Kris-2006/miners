@@ -40,4 +40,6 @@ hm_t *hm_resize(hm_t *map, uint32_t cap);
 size_t fnv1a_int(const void *key);
 size_t fnv1a_str(const void *key);
 
+int cmp_str(const void *a, const void *b);
+int cmp_int(const void *a, const void *b);
 #endif
