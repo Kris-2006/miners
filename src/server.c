@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/epoll.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -27,6 +28,7 @@ int client_add(server_ctx_t *ctx, int fd) {
   client->fd = fd;
   memset(client->username, 0, 32);
   client->auth = 0;
+  client->recv_len = 0;
 
   int status = hm_put(ctx->by_fd, &client->fd, client);
   if (status == -1) {
@@ -169,10 +171,22 @@ void client_auth(server_ctx_t *ctx, client_t *c, const char *uname) {
   }
 
   client_t *client = clientname_find(ctx, uname);
-
   if (client) {
-    // phase 5
-    return;
+
+    msg_t msg;
+    msg.TYPE = MSG_DISCONNECT;
+    strcpy(msg.sender, "SERVER");
+    strcpy(msg.payload, "new session");
+    msg.len = strlen("new session");
+    char buf[BUFSIZ];
+    size_t size = msg_pack(&msg, (uint8_t *)buf, BUFSIZ);
+    buf[size] = 0;
+
+    send(client->fd, buf, size, 0);
+
+    epoll_ctl(ctx->epoll_fd, EPOLL_CTL_DEL, client->fd, NULL);
+    client_remove(ctx, client->fd);
+    close(client->fd);
   }
 
   strncpy(c->username, uname, 31);

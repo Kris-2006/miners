@@ -6,7 +6,11 @@
 #include <sys/types.h>
 
 int msg_pack(const msg_t *msg, uint8_t *buf, size_t buf_size) {
-  int total_length = 1 + 32 + 2 + sizeof(msg->payload);
+  /*
+   * Takes a Message and converts into buffer
+   * returns size of the message of the buffer
+   */
+  int total_length = 1 + 32 + 2 + msg->len;
 
   if (total_length > (int)buf_size)
     return -1;
@@ -30,6 +34,12 @@ int msg_pack(const msg_t *msg, uint8_t *buf, size_t buf_size) {
 }
 
 int msg_unpack(const uint8_t *buf, size_t buf_size, msg_t *msg) {
+
+  /*
+   * Takes a msgbuff constructs Messages from them.
+   * returns 0 if valid msg
+   * -1 if invalid
+   */
 
   // header too small
   if (buf_size < 35)

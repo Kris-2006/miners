@@ -11,6 +11,8 @@ typedef struct {
   int fd;
   char username[32];
   int auth;
+  int recv_len;
+  char recv_buf[2 * MAX_BUFF];
 } client_t;
 
 typedef struct {

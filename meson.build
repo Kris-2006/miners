@@ -24,7 +24,7 @@ executable('server', server_src,
   include_directories : inc,
   dependencies : [thread_dep],
 )
-client_src = files('src/client/main.c')
+client_src = files('src/client/main.c','src/protocol.c')
 executable('client', client_src,
   include_directories : inc,
   dependencies : [curses_dep, thread_dep],
