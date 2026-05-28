@@ -34,5 +34,6 @@ void broadcast(server_ctx_t *ctx, const msg_t *msg, int exclude_fd);
 
 server_ctx_t *server_ctx_init();
 void server_ctx_free(server_ctx_t *ctx);
+void server_shutdown(server_ctx_t *server);
 
 #endif

@@ -30,6 +30,23 @@ void send_msg(int server_fd, const char *uname, const char *msg) {
   }
 }
 
+int user_logout(int server_fd, const char *uname) {
+  char logout_status[256];
+  msg_t msg_logout;
+  msg_logout.TYPE = MSG_DISCONNECT;
+  strncpy(msg_logout.sender, uname, 32);
+  msg_logout.len = 0;
+  int size = msg_pack(&msg_logout, (uint8_t *)logout_status, 256);
+  if (size < 0) {
+    LOG_ERR("Invalid msg pack");
+    LOG_INFO("Logout was interrupted.\n");
+    return -1;
+  }
+  send(server_fd, logout_status, size, 0);
+  LOG_INFO("Sucessfully Logged Out");
+  return 0;
+}
+
 int user_login(int server_fd, const char *uname) {
 
   char login_status[256];
@@ -50,14 +67,17 @@ int user_login(int server_fd, const char *uname) {
   if (msg_unpack((uint8_t *)login_status, sizeof(login_status), &login_cnf) ==
       0) {
 
-    if (strcmp(login_cnf.payload, "login_ok") == 0)
+    if (strcmp(login_cnf.payload, "login_ok") == 0) {
       LOG_INFO("Login sucessful");
-    else
+    } else {
       LOG_ERR("Login Unsucessful");
-    return -1;
-  } else
+      return -1;
+    }
+  } else {
     LOG_ERR("Error: Invalid Message from server.");
-  return -1;
+    return -1;
+  }
+  return 0;
 }
 
 int main(int argc, char *argv[]) {
@@ -97,8 +117,12 @@ int main(int argc, char *argv[]) {
   }
 
   status = user_login(fd, "its'me");
-  while (1)
-    send_msg(fd, "its'me", "Hello World\n Maybe i was wrong !!\n.");
+  if (status == -1) {
+    LOG_INFO("retry again");
+    return -1;
+  }
+  send_msg(fd, "its'me", "Hello World\n Maybe i was wrong !!\n.");
+  user_logout(fd, "its'me");
 
   char buf[MAX_BUFF];
   recv(fd, buf, MAX_BUFF, 0);

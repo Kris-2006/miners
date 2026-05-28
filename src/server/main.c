@@ -1,6 +1,8 @@
 #include "../../include/common.h"
 #include "../../include/server.h"
+#include "protocol.h"
 #include <arpa/inet.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -28,10 +30,10 @@ int set_nonblocking(int fd) {
   return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 }
 
-void handle_message(server_ctx_t *ctx, client_t *c, msg_t *msg) {
+int handle_message(server_ctx_t *ctx, client_t *c, msg_t *msg) {
   if (!ctx || !c || !msg) {
     LOG_ERR("hlogin-NULL");
-    return;
+    return 0;
   }
 
   if (msg->TYPE == MSG_LOGIN) {
@@ -56,10 +58,19 @@ void handle_message(server_ctx_t *ctx, client_t *c, msg_t *msg) {
   } else if (msg->TYPE == MSG_TEXT) {
 
     if (!c->auth)
-      return;
+      return 0;
     broadcast(ctx, msg, c->fd);
     LOG_INFO("Broadcasted message from %s:%s", msg->sender, msg->payload);
+
+  } else if (msg->TYPE == MSG_DISCONNECT) {
+    LOG_INFO("%s Logged out from server..", c->username);
+    int disc_fd = c->fd;
+    client_remove(ctx, c->fd);
+    epoll_ctl(ctx->epoll_fd, EPOLL_CTL_DEL, disc_fd, NULL);
+    close(disc_fd);
+    return 1;
   }
+  return 0;
 }
 volatile sig_atomic_t g_running = 1;
 
@@ -153,10 +164,14 @@ int main() {
     // int connfd = accept(fd, (struct sockaddr *)&conn, &len);
     //
     int nfds = epoll_wait(epfd, events, MAX_EVENTS, -1);
+
     if (nfds == -1) {
-      LOG_ERR("epoll_wait");
+      if (errno == EINTR)
+        continue;
+      LOG_ERR("Epoll_WAIT");
       break;
     }
+
     for (int i = 0; i < nfds; i++) {
       if (events[i].data.fd == server->listen_fd) {
         // handle new connections..
@@ -206,9 +221,12 @@ int main() {
             break;
           }
 
-          handle_message(server, c, &msg);
-          memmove(c->recv_buf, c->recv_buf + total_len, remaining);
-          c->recv_len = remaining;
+          int connected = handle_message(server, c, &msg);
+          if (connected == 0) {
+            memmove(c->recv_buf, c->recv_buf + total_len, remaining);
+            c->recv_len = remaining;
+          }
+          c = NULL;
         }
         // msg_t msg;
         // int e = msg_unpack((uint8_t *)c->recv_buf, c->recv_len, &msg);
@@ -219,8 +237,9 @@ int main() {
       }
     }
   }
-
+  server_shutdown(server);
   server_ctx_free(server);
+  close(epfd);
   freeaddrinfo(res);
   close(fd);
 }

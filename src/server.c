@@ -1,4 +1,7 @@
 #include "../include/server.h"
+#include "common.h"
+#include "hashmap.h"
+#include "protocol.h"
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -171,8 +174,7 @@ void client_auth(server_ctx_t *ctx, client_t *c, const char *uname) {
   }
 
   client_t *client = clientname_find(ctx, uname);
-  if (client) {
-
+  if (client && client != c) {
     msg_t msg;
     msg.TYPE = MSG_DISCONNECT;
     strcpy(msg.sender, "SERVER");
@@ -186,7 +188,7 @@ void client_auth(server_ctx_t *ctx, client_t *c, const char *uname) {
 
     epoll_ctl(ctx->epoll_fd, EPOLL_CTL_DEL, client->fd, NULL);
     client_remove(ctx, client->fd);
-    close(client->fd);
+    // close(client->fd);
   }
 
   strncpy(c->username, uname, 31);
@@ -194,4 +196,27 @@ void client_auth(server_ctx_t *ctx, client_t *c, const char *uname) {
   hm_put(ctx->by_name, uname, c);
 
   return;
+}
+
+void server_shutdown(server_ctx_t *server) {
+
+  if (!server || !server->by_fd)
+    return;
+
+  int cap = server->by_fd->capacity;
+  hm_entry_t *entries = server->by_fd->entries;
+
+  msg_t discon_msg;
+  discon_msg.TYPE = MSG_DISCONNECT;
+  strcpy(discon_msg.sender, "SERVER0xdead");
+  discon_msg.len = 0;
+  char msg_buff[MAX_BUFF];
+  int size = msg_pack(&discon_msg, msg_buff, MAX_BUFF);
+
+  for (int i = 0; i < cap; i++) {
+    if (entries[i].state == 1) {
+      send(*(int *)entries[i].key, msg_buff, size, 0);
+      close(*(int *)entries[i].key);
+    }
+  }
 }
