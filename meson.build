@@ -24,7 +24,7 @@ executable('server', server_src,
   include_directories : inc,
   dependencies : [thread_dep],
 )
-client_src = files('src/client/main.c','src/protocol.c')
+client_src = files('src/client/main.c','src/client/client.c','src/protocol.c')
 executable('client', client_src,
   include_directories : inc,
   dependencies : [curses_dep, thread_dep],
@@ -46,3 +46,9 @@ test_server = executable('test_server',
   include_directories : inc,
   )
 test('server',test_server)
+
+test_client = executable('test_client',
+  files('tests/test_client.c','src/client/client.c','src/protocol.c'),
+  include_directories : inc,
+  )
+test('client', test_client, timeout : 30)

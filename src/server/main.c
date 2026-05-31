@@ -222,11 +222,10 @@ int main() {
           }
 
           int connected = handle_message(server, c, &msg);
-          if (connected == 0) {
-            memmove(c->recv_buf, c->recv_buf + total_len, remaining);
-            c->recv_len = remaining;
-          }
-          c = NULL;
+          if (connected == 1)
+            break; // client was removed+freed by handle_message
+          memmove(c->recv_buf, c->recv_buf + total_len, remaining);
+          c->recv_len = remaining;
         }
         // msg_t msg;
         // int e = msg_unpack((uint8_t *)c->recv_buf, c->recv_len, &msg);

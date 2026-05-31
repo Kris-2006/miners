@@ -193,7 +193,7 @@ void client_auth(server_ctx_t *ctx, client_t *c, const char *uname) {
 
   strncpy(c->username, uname, 31);
   c->auth = 1;
-  hm_put(ctx->by_name, uname, c);
+  hm_put(ctx->by_name, c->username, c);
 
   return;
 }

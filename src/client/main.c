@@ -1,137 +1,64 @@
+#include "../../include/client.h"
 #include "../../include/common.h"
 #include "../../include/protocol.h"
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/socket.h>
-#include <sys/types.h>
 #include <unistd.h>
-
-void send_msg(int server_fd, const char *uname, const char *msg) {
-
-  msg_t Message;
-  Message.TYPE = MSG_TEXT;
-  strncpy(Message.sender, uname, 32);
-  strncpy(Message.payload, msg, 256);
-  Message.len = strnlen(Message.payload, 256);
-
-  char send_buf[256];
-  int size;
-
-  size = msg_pack(&Message, (uint8_t *)send_buf, BUFSIZ);
-  char *ptr = send_buf;
-  while (size > 0) {
-    int sent = send(server_fd, ptr, size, 0);
-    ptr = ptr + (char)sent;
-    size -= sent;
-  }
-}
-
-int user_logout(int server_fd, const char *uname) {
-  char logout_status[256];
-  msg_t msg_logout;
-  msg_logout.TYPE = MSG_DISCONNECT;
-  strncpy(msg_logout.sender, uname, 32);
-  msg_logout.len = 0;
-  int size = msg_pack(&msg_logout, (uint8_t *)logout_status, 256);
-  if (size < 0) {
-    LOG_ERR("Invalid msg pack");
-    LOG_INFO("Logout was interrupted.\n");
-    return -1;
-  }
-  send(server_fd, logout_status, size, 0);
-  LOG_INFO("Sucessfully Logged Out");
-  return 0;
-}
-
-int user_login(int server_fd, const char *uname) {
-
-  char login_status[256];
-  msg_t msg_login;
-  msg_login.TYPE = MSG_LOGIN;
-  strcpy(msg_login.sender, uname);
-  msg_login.len = 0;
-  int size;
-  size = msg_pack(&msg_login, (uint8_t *)login_status, 256);
-  send(server_fd, login_status, size, 0);
-  LOG_INFO("Sent Login..");
-  size = recv(server_fd, login_status, sizeof(login_status), 0);
-  if (size < 0) {
-    LOG_ERR("recv-user_login");
-    return -1;
-  }
-  msg_t login_cnf;
-  if (msg_unpack((uint8_t *)login_status, sizeof(login_status), &login_cnf) ==
-      0) {
-
-    if (strcmp(login_cnf.payload, "login_ok") == 0) {
-      LOG_INFO("Login sucessful");
-    } else {
-      LOG_ERR("Login Unsucessful");
-      return -1;
-    }
-  } else {
-    LOG_ERR("Error: Invalid Message from server.");
-    return -1;
-  }
-  return 0;
-}
 
 int main(int argc, char *argv[]) {
 
-  if (argc < 2) {
-    LOG_INFO("Usage: %s addr [port]", argv[0]);
+  if (argc < 3) {
+    LOG_INFO("Usage: %s addr username [port]", argv[0]);
     return -1;
   }
 
-  const char *port = (argc == 3) ? argv[2] : DEF_PORT;
+  const char *host = argv[1];
+  const char *username = argv[2];
+  const char *port = (argc == 4) ? argv[3] : DEF_PORT;
 
-  int fd, status;
-  struct addrinfo server_addr, *hints;
-  memset(&server_addr, 0, sizeof server_addr);
-  server_addr.ai_family = AF_INET;
-  server_addr.ai_socktype = SOCK_STREAM;
-  server_addr.ai_flags = AI_PASSIVE;
-
-  status = getaddrinfo(argv[1], port, &server_addr, &hints);
-  if (status != 0) {
-    LOG_ERR("%s", gai_strerror(status));
+  LOG_INFO("Connecting to %s:%s as '%s'...", host, port, username);
+  client_ctx_t *ctx = client_connect(host, port, username);
+  if (!ctx) {
+    LOG_ERR("Connection failed");
     return -1;
   }
+  LOG_INFO("Connected! fd=%d, user=%s", client_getfd(ctx),
+           client_get_username(ctx));
 
-  fd = socket(hints->ai_family, hints->ai_socktype, hints->ai_protocol);
-  if (fd == -1) {
-    LOG_ERR("Socket failed");
+  LOG_INFO("Sending text message...");
+  if (!client_send_text(ctx, "Hello from the new client API!")) {
+    LOG_ERR("Send failed");
+    client_destroy(ctx);
     return -1;
   }
+  LOG_INFO("Message sent");
 
-  status = connect(fd, (struct sockaddr *)hints->ai_addr, hints->ai_addrlen);
+  // recv  test..
+  LOG_INFO("Waiting for a message from server (2s)...");
+  sleep(2);
 
-  if (status == -1) {
-    LOG_ERR("connect");
-    close(fd);
-    return -1;
+  int n = client_recv(ctx);
+  if (n > 0) {
+    LOG_INFO("Received %d bytes", n);
+    msg_t msg;
+    while (client_next_msg(ctx, &msg)) {
+      LOG_INFO("  [%s] type=%d sender='%s' payload='%.*s'",
+               msg.TYPE == MSG_TEXT     ? "TEXT"
+               : msg.TYPE == MSG_STATUS ? "STATUS"
+                                        : "OTHER",
+               msg.TYPE, msg.sender, msg.len, msg.payload);
+    }
+  } else if (n == 0) {
+    LOG_INFO("Server closed connection");
+  } else {
+    LOG_INFO("No data (recv returned %d)", n);
   }
 
-  status = user_login(fd, "its'me");
-  if (status == -1) {
-    LOG_INFO("retry again");
-    return -1;
-  }
-  send_msg(fd, "its'me", "Hello World\n Maybe i was wrong !!\n.");
-  user_logout(fd, "its'me");
-
-  char buf[MAX_BUFF];
-  recv(fd, buf, MAX_BUFF, 0);
-  buf[MAX_BUFF - 1] = 0;
-
-  LOG("echo", " %s", buf);
-
-  freeaddrinfo(hints);
-  close(fd);
+  // Disconnect
+  LOG_INFO("Disconnecting...");
+  client_disconnect(ctx);
+  client_destroy(ctx);
+  LOG_INFO("Done.");
 
   return 0;
 }
