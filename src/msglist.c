@@ -1,4 +1,4 @@
-#include "include/msglist.h"
+#include "msglist.h"
 #include "common.h"
 #include <stdlib.h>
 #include <string.h>
@@ -11,8 +11,8 @@ chat_msg *chat_init() {
     LOG_ERR("Chat Buffer not initialised");
     return NULL;
   }
-  chat->start = 0;
-  chat->end = 0;
+  chat->count = 0;
+  chat->head = 0;
   LOG_INFO("CHAT_BUFFER Init()");
   return chat;
 }
@@ -27,36 +27,29 @@ int chat_count(chat_msg *msgList) {
     LOG_ERR("NULL args passed");
     return -1;
   }
-  if (msgList->start > msgList->end) {
-    return RING_CAP - (msgList->start - msgList->end);
-  } else if (msgList->start == msgList->end) {
-    return RING_CAP;
-  } else {
-    return msgList->end - msgList->end;
-  }
-  return -1;
+  return msgList->count;
 }
 
 chat_entry_t *get_chat(chat_msg *msgList, int index) {
-  int idx = msgList->start + index;
-  idx = idx % RING_CAP;
-  return &msgList->entries[idx];
+  return &msgList->entries[(index - msgList->count + msgList->head + RING_CAP) %
+                           RING_CAP];
 }
 
 void chat_push(chat_msg *msgList, chat_entry_type type, const char *sender,
                const char *text) {
-  if (!msgList || sender || text) {
+  if (!msgList || !sender || !text) {
     LOG_ERR("NULL Args Passed");
     return;
   }
-
-  msgList->entries[msgList->end].type = type;
-  strncpy(msgList->entries[msgList->end].sender, sender, 32);
-  strncpy(msgList->entries[msgList->end].message, text, 256);
-  if (chat_count(msgList) == RING_CAP) {
-    msgList->start = (msgList->start + 1) % RING_CAP;
-  }
-  msgList->end = (msgList->end + 1) % RING_CAP;
+  chat_entry_t *e = &msgList->entries[msgList->head];
+  e->type = type;
+  strncpy(e->sender, sender, 31);
+  e->sender[31] = '\0';
+  strncpy(e->message, text, 255);
+  e->message[255] = '\0';
+  msgList->head = (msgList->head + 1) % RING_CAP;
+  if (chat_count(msgList) < RING_CAP)
+    msgList->count++;
   LOG_INFO("Msg from %s appended", sender);
   return;
 }

@@ -17,8 +17,8 @@ typedef struct {
 
 typedef struct {
   chat_entry_t entries[RING_CAP];
-  int start;
-  int end;
+  int count;
+  int head;
 } chat_msg;
 
 chat_msg *chat_init();
