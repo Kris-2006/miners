@@ -1,64 +1,95 @@
-#include "../../include/client.h"
-#include "../../include/common.h"
-#include "../../include/protocol.h"
-#include <stdio.h>
-#include <string.h>
+#include <signal.h>
+#include <sys/poll.h>
 #include <unistd.h>
 
-int main(int argc, char *argv[]) {
+#include "client.h"
+#include "common.h"
+#include "msglist.h"
+#include "protocol.h"
+#include "ui.h"
 
-  if (argc < 3) {
-    LOG_INFO("Usage: %s addr username [port]", argv[0]);
-    return -1;
-  }
+volatile sig_atomic_t g_running = 1;
 
-  const char *host = argv[1];
-  const char *username = argv[2];
-  const char *port = (argc == 4) ? argv[3] : DEF_PORT;
+void h_sigint(int sig) {
+    (void)sig;
+    g_running = 0;
+}
 
-  LOG_INFO("Connecting to %s:%s as '%s'...", host, port, username);
-  client_ctx_t *ctx = client_connect(host, port, username);
-  if (!ctx) {
-    LOG_ERR("Connection failed");
-    return -1;
-  }
-  LOG_INFO("Connected! fd=%d, user=%s", client_getfd(ctx),
-           client_get_username(ctx));
-
-  LOG_INFO("Sending text message...");
-  if (!client_send_text(ctx, "Hello from the new client API!")) {
-    LOG_ERR("Send failed");
-    client_destroy(ctx);
-    return -1;
-  }
-  LOG_INFO("Message sent");
-
-  // recv  test..
-  LOG_INFO("Waiting for a message from server (2s)...");
-  sleep(2);
-
-  int n = client_recv(ctx);
-  if (n > 0) {
-    LOG_INFO("Received %d bytes", n);
-    msg_t msg;
-    while (client_next_msg(ctx, &msg)) {
-      LOG_INFO("  [%s] type=%d sender='%s' payload='%.*s'",
-               msg.TYPE == MSG_TEXT     ? "TEXT"
-               : msg.TYPE == MSG_STATUS ? "STATUS"
-                                        : "OTHER",
-               msg.TYPE, msg.sender, msg.len, msg.payload);
+int main(int argc, char* argv[]) {
+    if (argc < 3) {
+        LOG_ERR("Usage: %s host username [port]\n", argv[0]);
+        return -1;
     }
-  } else if (n == 0) {
-    LOG_INFO("Server closed connection");
-  } else {
-    LOG_INFO("No data (recv returned %d)", n);
-  }
 
-  // Disconnect
-  LOG_INFO("Disconnecting...");
-  client_disconnect(ctx);
-  client_destroy(ctx);
-  LOG_INFO("Done.");
+    struct sigaction sa;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sa.sa_handler = h_sigint;
+    sigaction(SIGINT, &sa, NULL);
 
-  return 0;
+    char const* host = argv[1];
+    char const* username = argv[2];
+    char const* port = (argc == 4) ? argv[3] : DEF_PORT;
+
+    chat_msg* msgList = chat_init();
+    if (!msgList) {
+        LOG_ERR("Chat Not initialised");
+        return -1;
+    }
+    client_ctx_t* client;
+    if ((client = client_connect(host, port, username)) == NULL) {
+        chat_destroy(msgList);
+        LOG_ERR("Client Not Connected");
+        return -1;
+    }
+    chat_push(msgList, CHAT_STATUS, " ", "You joined the Chat");
+
+    ui_t* ui = ui_init(username);
+    if (!ui) {
+        chat_destroy(msgList);
+        client_destroy(client);
+        LOG_ERR("ui_init() err");
+        return -1;
+    }
+
+    struct pollfd fds[2];
+    fds[0].fd = STDIN_FILENO;
+    fds[0].events = POLLIN;
+    fds[1].fd = client_getfd(client);
+    fds[1].events = POLLIN;
+
+    const char* message;
+    msg_t msg;
+    ui_refresh(ui, msgList);
+    while (g_running) {
+        poll(fds, 2, 50);
+        if (fds[0].revents & POLLIN) {
+            message = ui_handle_key(ui);
+            if (message) {
+                chat_push(msgList, CHAT_TEXT, username, message);
+                client_send_text(client, message);
+            }
+        }
+        if (fds[1].revents & POLLIN) {
+            client_recv(client);
+            while (client_next_msg(client, &msg)) {
+                int cp;
+                if (msg.TYPE == MSG_TEXT) {
+                    cp = CHAT_TEXT;
+                } else if (msg.TYPE == MSG_STATUS) {
+                    cp = CHAT_STATUS;
+                } else {
+                    cp = CHAT_ERR;
+                }
+                chat_push(msgList, cp, msg.sender, msg.payload);
+            }
+        }
+        ui_refresh(ui, msgList);
+    }
+
+    client_disconnect(client);
+    ui_destroy(ui);
+    client_destroy(client);
+    chat_destroy(msgList);
+    return 0;
 }
